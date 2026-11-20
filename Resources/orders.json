@@ -1,0 +1,34 @@
+{
+  "move": [
+    "move", "move out", "move to", "move over", "move across", "move forward", "march",
+    "march to", "march forward", "go", "go there", "go here", "go straight there", "go to", "go across", "go all the way", "come here", "head to", "head for", "head north",
+    "advance", "advance to", "advance towards", "walk to", "ride to", "ride across", "cross",
+    "cross over", "get to", "get over to", "send to", "send up", "send over", "take up position",
+    "reposition", "relocate to", "make your way to", "travel to", "proceed to", "gather at",
+    "form up at", "assemble at", "deploy to", "bring them to", "rally at", "rally to"
+  ],
+  "attack": [
+    "attack", "attack them", "attack now", "attack move", "attack their flank", "attack the enemy",
+    "charge", "charge at", "charge into", "engage", "engage the enemy", "open fire", "fire at",
+    "fire on", "shoot", "shoot at", "loose arrows", "focus", "focus fire", "focus on", "target",
+    "strike", "strike at", "hit", "eliminate", "take out", "go after", "rush the enemy", "push through",
+    "assault", "assault their position", "storm", "flank", "outflank", "fight", "pursue", "chase down",
+    "overrun", "break their line", "fire", "engage at will", "take down"
+  ],
+  "hold": [
+    "hold", "hold here", "hold position", "hold your ground", "hold the line", "hold at",
+    "stay", "stay put", "stay there", "stay where you are", "stand fast", "stand firm", "stand your ground",
+    "stop", "stop here", "halt", "wait", "wait here", "wait at", "wait for orders", "defend",
+    "defend this position", "guard", "guard the crossing", "protect", "protect the area", "dig in",
+    "brace", "brace for contact", "keep your position", "maintain position", "secure", "cover",
+    "stand guard", "hold still", "remain in place", "hold fire"
+  ],
+  "retreat": [
+    "retreat", "retreat home", "retreat to", "fall back", "fall back now", "fall back to",
+    "pull back", "pull them back", "pull out", "withdraw", "withdraw to", "return to camp",
+    "return home", "get back", "get back to base", "go back", "go back home", "back off",
+    "back away", "back up", "turn back", "disengage", "get out of there", "break contact",
+    "regroup", "regroup at base", "run back", "head back", "bring them home", "evacuate",
+    "retire", "pull everyone back", "return", "come back", "retreat and regroup"
+  ]
+}

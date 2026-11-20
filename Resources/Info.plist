@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleDevelopmentRegion</key><string>en</string>
+<key>CFBundleExecutable</key><string>Bannerfall</string>
+<key>CFBundleIdentifier</key><string>io.github.kargo-kult-wahrheit.bannerfall</string>
+<key>CFBundleName</key><string>Bannerfall</string>
+<key>CFBundleDisplayName</key><string>Bannerfall</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleShortVersionString</key><string>0.1.0</string>
+<key>CFBundleVersion</key><string>1</string>
+<key>LSMinimumSystemVersion</key><string>14.0</string>
+<key>NSHighResolutionCapable</key><true/>
+<key>NSMicrophoneUsageDescription</key><string>Bannerfall listens while you hold push-to-talk. Speech is decoded on this Mac to give orders to your army.</string>
+<key>LSApplicationCategoryType</key><string>public.app-category.strategy-games</string>
+</dict></plist>
