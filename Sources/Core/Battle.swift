@@ -1,7 +1,7 @@
 import Foundation
 
 enum Side: Int { case blue, red }
-enum Kind: String, CaseIterable {
+enum Kind: String, CaseIterable, Encodable {
     case archers = "Archers", infantry = "Infantry", cavalry = "Light cavalry"
     var hp: Double { switch self { case .archers: return 58; case .infantry: return 134; case .cavalry: return 82 } }
     var speed: Double { switch self { case .archers: return 1.45; case .infantry: return 1.18; case .cavalry: return 2.52 } }
@@ -11,12 +11,12 @@ enum Kind: String, CaseIterable {
     var role: String { switch self { case .archers: return "Ranged"; case .infantry: return "Armored melee"; case .cavalry: return "Fast melee" } }
     var symbol: String { switch self { case .archers: return "scope"; case .infantry: return "shield.lefthalf.filled"; case .cavalry: return "hare.fill" } }
 }
-enum Action: String, CaseIterable { case move, attack, hold, retreat }
-enum Phase: Equatable { case deployment, running, paused, victory, defeat, draw
+enum Action: String, CaseIterable, Encodable { case move, attack, hold, retreat }
+enum Phase: String, Encodable { case deployment, running, paused, victory, defeat, draw
     var finished: Bool { self == .victory || self == .defeat || self == .draw }
 }
 
-struct Order {
+struct Order: Encodable {
     let action: Action
     var goal: Cell?
     var focus: Kind?
@@ -81,7 +81,7 @@ final class Battle {
     func living(_ side: Side) -> [Soldier] { units.filter { $0.alive && $0.side == side } }
 
     @discardableResult
-    func issue(_ order: Order, to ids: Set<Int>) -> Int {
+    func issue(_ order: Order, to ids: Set<Int>, onAssigned: ((Soldier) -> Void)? = nil) -> Int {
         guard !phase.finished else { return 0 }
         let soldiers = living(.blue).filter { ids.contains($0.id) }
         let goal = order.goal
@@ -101,6 +101,7 @@ final class Battle {
             u.order = assigned; u.anchor = assigned.goal ?? u.p.cell; u.targetID = nil
             u.stop()
             if let target = assigned.goal { plan(u, to: target) }
+            onAssigned?(u)
         }
         nextDecision = 0
         return soldiers.count
