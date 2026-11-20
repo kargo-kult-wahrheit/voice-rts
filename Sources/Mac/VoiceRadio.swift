@@ -4,12 +4,15 @@ import Foundation
     enum State { case idle, preparing, ready, recording, processing, unavailable }
     @Published private(set) var state: State = .idle
     @Published private(set) var note = "English · on-device"
-    var onTranscript: ((String) -> Void)?
+    var onTranscript: ((String, VoiceTrace) -> Void)?
+    var onIssue: ((_ stage: String, _ detail: String, _ trace: VoiceTrace) -> Void)?
     var commandModel: CommandModel?
     private let speech = LocalSpeech()
     private var recorder: AVAudioRecorder?, file: URL?
     private var decoding: Task<Void, Never>?, watchdog: Task<Void, Never>?
     private var generation = 0
+    private var recordedMS: Int?
+    private var decodeStarted: TimeInterval?
 
     func press() {
         switch state {
@@ -23,17 +26,26 @@ import Foundation
 
     private func prepare() async {
         guard await AVCaptureDevice.requestAccess(for: .audio) else {
-            fail("Allow Bannerfall in System Settings → Privacy & Security → Microphone, then retry."); return
+            fail("Allow Bannerfall in System Settings → Privacy & Security → Microphone, then retry.", stage: "preparation"); return
         }
         guard let commandModel, let model = Bundle.main.url(forResource: "ggml-base.en-q5_1", withExtension: "bin") else {
-            fail("The bundled English model is missing. Rebuild the app with make app."); return
+            fail("The bundled English model is missing. Rebuild the app with make app.", stage: "preparation"); return
         }
         do { try await speech.load(model: model, commands: commandModel); ready() }
-        catch { fail(error.localizedDescription) }
+        catch { fail(error.localizedDescription, stage: "preparation") }
     }
 
     private func ready() { state = .ready; note = "Ready · hold Space to speak" }
-    private func fail(_ message: String) { state = .unavailable; note = message }
+    private func fail(_ message: String, stage: String) {
+        state = .unavailable; note = message
+        onIssue?(stage, message, trace())
+    }
+
+    private func trace(_ transcript: SpeechTranscript? = nil) -> VoiceTrace {
+        let recording = recorder.map { Int(($0.currentTime * 1000).rounded()) } ?? recordedMS
+        let decoding = decodeStarted.map { Int(((ProcessInfo.processInfo.systemUptime - $0) * 1000).rounded()) }
+        return VoiceTrace(recordingMS: recording, decodingMS: decoding, transcript: transcript)
+    }
 
     private func record() {
         generation += 1
@@ -49,17 +61,21 @@ import Foundation
                 try? await Task.sleep(nanoseconds: 12_000_000_000)
                 if !Task.isCancelled { release() }
             }
-        } catch { cleanup(); fail(error.localizedDescription) }
+        } catch { cleanup(); fail(error.localizedDescription, stage: "recording") }
     }
 
     func release() {
         guard state == .recording, let capture = recorder, let url = file else { return }
         let duration = capture.currentTime, token = generation
+        recordedMS = Int((duration * 1000).rounded())
         capture.stop(); recorder = nil
         watchdog?.cancel()
         if duration < 0.18 {
-            cleanup(); ready(); note = "Hold Space while speaking, then release."; return
+            let info = trace()
+            cleanup(); ready(); note = "Hold Space while speaking, then release."
+            onIssue?("recording", note, info); return
         }
+        decodeStarted = ProcessInfo.processInfo.systemUptime
         state = .processing; note = "Interpreting on this Mac…"
         watchdog = Task {
             try? await Task.sleep(nanoseconds: 15_000_000_000)
@@ -71,27 +87,36 @@ import Foundation
         }
     }
 
-    private func complete(_ token: Int, result: Result<String, Error>) {
+    private func complete(_ token: Int, result: Result<SpeechTranscript, Error>) {
         guard generation == token, state == .processing else { return }
+        let info = trace(try? result.get())
         generation += 1; cleanup(); ready()
         switch result {
-        case .success(let phrase):
-            guard !phrase.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                note = "No speech heard. Check your input and try again."; return
+        case .success(let transcript):
+            if let error = transcript.grammarError {
+                note = error; onIssue?("recognition", note, info); return
             }
-            onTranscript?(phrase)
-        case .failure(let error): note = error.localizedDescription
+            guard !transcript.finalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                note = "No speech heard. Check your input and try again."
+                onIssue?("recognition", note, info); return
+            }
+            onTranscript?(transcript.finalText, info)
+        case .failure(let error):
+            note = error.localizedDescription; onIssue?("recognition", note, info)
         }
     }
 
-    func cancel() {
+    func cancel(_ reason: String = "Voice input cancelled.") {
         guard state == .recording || state == .processing else { return }
+        let stage = state == .recording ? "recording" : "recognition"
+        let info = trace()
         generation += 1; recorder?.stop(); recorder = nil; cleanup(); ready()
+        onIssue?("cancelled_" + stage, reason, info)
     }
     private func cleanup() {
         watchdog?.cancel(); watchdog = nil
         decoding?.cancel(); decoding = nil
         if let file { try? FileManager.default.removeItem(at: file) }
-        file = nil
+        file = nil; recordedMS = nil; decodeStarted = nil
     }
 }

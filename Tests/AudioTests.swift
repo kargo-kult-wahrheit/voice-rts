@@ -1,7 +1,8 @@
+import AVFoundation
 import Foundation
 
 @main struct AudioTests {
-    static func main() async throws {
+    @MainActor static func main() async throws {
         setbuf(stdout, nil)
         let speech = LocalSpeech()
         let model = try CommandModel(data:Data(contentsOf:URL(fileURLWithPath:"Resources/orders.json")))
@@ -12,11 +13,17 @@ import Foundation
             ("attack",.attack,.cavalry,.archers,nil), ("retreat",.retreat,nil,nil,.camp)
         ]
         var failures = 0
+        var traces: [VoiceTrace] = []
         for (file, action, actor, target, place) in cases {
             let start = ProcessInfo.processInfo.systemUptime
             let audio = URL(fileURLWithPath:"Tests/Fixtures/\(file).wav")
-            let transcript = try await speech.transcribe(audio)
+            let recognition = try await speech.transcribe(audio)
             let latency = Int(1000 * (ProcessInfo.processInfo.systemUptime - start))
+            if let error = recognition.grammarError { throw OrderError(error) }
+            let transcript = recognition.finalText
+            let fixture = try AVAudioFile(forReading: audio)
+            let duration = Int(1000 * Double(fixture.length) / fixture.fileFormat.sampleRate)
+            traces.append(VoiceTrace(recordingMS: duration, decodingMS: latency, transcript: recognition))
             do {
                 let parsed = try model.interpret(transcript)
                 let battle = Battle(map:map)
@@ -30,5 +37,6 @@ import Foundation
             } catch { print("FAIL \(file): “\(transcript)” · \(error.localizedDescription)"); failures += 1 }
         }
         if failures > 0 { throw OrderError("\(failures) recorded voice orders failed.") }
+        try PlaytestLogTests.run(traces)
     }
 }

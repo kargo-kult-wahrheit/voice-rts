@@ -148,7 +148,17 @@ private struct Crest: View {
                 }.buttonStyle(.plain).disabled(alive.isEmpty).accessibilityLabel("Select \(kind.rawValue)")
             }.padding(.top,5)
             divider
-            SmallCaps("ORDER LOG").foregroundStyle(Color.gold).padding(.bottom,8)
+            HStack {
+                SmallCaps("ORDER LOG").foregroundStyle(Color.gold)
+                Spacer()
+                Button("Show logs") { game.revealLog() }
+                    .buttonStyle(.plain).font(.caption).foregroundStyle(Color.gold)
+                    .help("Reveal this playtest log in Finder")
+            }.padding(.bottom,8)
+            if let error = game.logError {
+                Text("Couldn’t save the playtest log. \(error)")
+                    .font(.caption).foregroundStyle(Color(rgb:0xffad96)).padding(.bottom,6)
+            }
             if game.dispatches.isEmpty {
                 Text("Give orders during deployment, then begin the battle. Defeat the eastern army.")
                     .font(.system(size:12)).foregroundStyle(Color.paper.opacity(0.85)).fixedSize(horizontal:false,vertical:true)
@@ -158,7 +168,23 @@ private struct Crest: View {
                     VStack(alignment:.leading,spacing:10) {
                         ForEach(game.dispatches) { d in
                             VStack(alignment:.leading,spacing:3) {
-                                Text(d.source).font(.system(size:9,weight:.bold,design:.monospaced)).tracking(1).foregroundStyle(Color.paper.opacity(0.57))
+                                HStack {
+                                    Text(d.source).font(.system(size:9,weight:.bold,design:.monospaced)).tracking(1).foregroundStyle(Color.paper.opacity(0.57))
+                                    Spacer()
+                                    Menu {
+                                        ForEach(ReviewFlag.allCases, id: \.self) { reason in
+                                            if reason != .transcription || d.source == "VOICE" {
+                                                Button(reason.label) { game.flag(d.id, as: reason) }
+                                            }
+                                        }
+                                        if d.flag != nil { Button("Clear flag") { game.flag(d.id, as: nil) } }
+                                    } label: {
+                                        Image(systemName: d.flag == nil ? "flag" : "flag.fill")
+                                            .foregroundStyle(d.flag == nil ? Color.paper.opacity(0.65) : Color.gold)
+                                    }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                                        .help(d.flag?.label ?? "Flag this order for review")
+                                        .accessibilityLabel("Flag order for review")
+                                }
                                 Text(d.words).font(.system(size:12,weight:.medium))
                                 Text(d.detail).font(.system(size:11)).foregroundStyle(d.accepted ? Color.gold : Color(rgb:0xffad96))
                             }.frame(maxWidth:.infinity,alignment:.leading)

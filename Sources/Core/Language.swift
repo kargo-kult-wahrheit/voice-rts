@@ -1,6 +1,6 @@
 import Foundation
 
-struct Interpretation {
+struct Interpretation: Encodable {
     let order: Order
     let actors: Set<Kind>?
     let entireArmy: Bool
