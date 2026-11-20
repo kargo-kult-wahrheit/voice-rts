@@ -2,15 +2,20 @@ import AppKit
 import SwiftUI
 
 struct DispatchEntry: Identifiable {
-    let id = UUID()
+    let id: UUID
     let source: String, words: String, detail: String, accepted: Bool
+    var flag: ReviewFlag?
 }
 
 @MainActor final class FrameClock: ObservableObject { @Published var frame = 0 }
 
 @MainActor final class GameStore: ObservableObject {
     let art: TerrainArt, battle: Battle, radio = VoiceRadio(), clock = FrameClock()
+    let journal: PlaytestLog
     private let model: CommandModel?
+    private var matchNumber = 1
+    private var sessionEnded = false
+    @Published private(set) var logError: String?
     @Published private(set) var selected: Set<Int> = []
     @Published private(set) var marker: Cell?
     @Published private(set) var dispatches: [DispatchEntry] = []
@@ -26,15 +31,26 @@ struct DispatchEntry: Identifiable {
     private var remainder = 0.0, spaceHeld = false
     private var deactivation: NSObjectProtocol?
 
-    init() {
+    init(journal: PlaytestLog = PlaytestLog(), examples: URL? = Bundle.main.url(forResource: "orders", withExtension: "json")) {
+        self.journal = journal
         let artwork = TerrainArt()
         art = artwork; battle = Battle(map: artwork.map)
-        if let file = Bundle.main.url(forResource: "orders", withExtension: "json") {
+        if let file = examples {
             model = try? CommandModel(data: Data(contentsOf: file))
         } else { model = nil }
         selected = Set(battle.living(.blue).map(\.id))
         radio.commandModel = model
-        radio.onTranscript = { [weak self] in self?.submit($0, source: "VOICE") }
+        radio.onTranscript = { [weak self] words, trace in self?.submit(words, source: "VOICE", voice: trace) }
+        radio.onIssue = { [weak self] stage, reason, trace in
+            guard let self else { return }
+            var entry = self.command("VOICE", trace.transcript?.raw, voice: trace)
+            entry.stage = stage
+            entry.outcome = stage.hasPrefix("cancelled_") ? "cancelled" : "failed"
+            entry.detail = reason
+            self.finish(entry)
+        }
+        persist("session_started", ["map": "Alder Crossing", "speechModel": "whisper-base.en-q5_1", "interpreter": "naive-bayes-v1"])
+        logBattle("match_started")
     }
 
     func startUI() {
@@ -49,7 +65,7 @@ struct DispatchEntry: Identifiable {
             return handled ? nil : e
         }
         deactivation = NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.spaceHeld = false; self?.radio.cancel() }
+            MainActor.assumeIsolated { self?.spaceHeld = false; self?.radio.cancel("Game lost focus.") }
         }
     }
 
@@ -57,7 +73,14 @@ struct DispatchEntry: Identifiable {
         timer?.invalidate(); timer = nil
         if let keys { NSEvent.removeMonitor(keys); self.keys = nil }
         if let deactivation { NotificationCenter.default.removeObserver(deactivation); self.deactivation = nil }
-        radio.cancel()
+        radio.cancel("Game window closed.")
+    }
+
+    func endSession() {
+        guard !sessionEnded else { return }
+        stopUI()
+        logBattle("session_ended")
+        sessionEnded = true
     }
 
     // Keep navigation and combat on the same fixed timestep used by the headless simulation.
@@ -73,7 +96,10 @@ struct DispatchEntry: Identifiable {
         if time != Int(battle.elapsed) { time = Int(battle.elapsed) }
         if blueCount != blue.count { blueCount = blue.count; selected.formIntersection(blue.map(\.id)) }
         if redCount != red.count { redCount = red.count }
-        if phase != battle.phase { phase = battle.phase; radio.cancel() }
+        if phase != battle.phase {
+            phase = battle.phase; radio.cancel("Match ended.")
+            logBattle("phase_changed")
+        }
         clock.frame &+= 1
     }
 
@@ -112,38 +138,87 @@ struct DispatchEntry: Identifiable {
         if phase.finished { reset(); return }
         battle.phase = phase == .running ? .paused : .running
         phase = battle.phase; lastTime = ProcessInfo.processInfo.systemUptime; remainder = 0
+        logBattle("phase_changed")
     }
     func reset() {
-        radio.cancel(); spaceHeld = false; battle.reset(); selected = Set(battle.living(.blue).map(\.id))
+        radio.cancel("Match restarted."); spaceHeld = false
+        logBattle("match_restarted"); matchNumber += 1
+        battle.reset(); selected = Set(battle.living(.blue).map(\.id))
         dispatches.removeAll(); marker = nil; time = 0; blueCount = 18; redCount = 18
         remainder = 0; phase = .deployment; clock.frame &+= 1
+        logBattle("match_started")
     }
     func select(_ kind: Kind?) {
         selected = Set(battle.living(.blue).filter { kind == nil || $0.kind == kind }.map(\.id))
     }
-    private func log(_ source: String, _ words: String, _ detail: String, _ accepted: Bool) {
-        dispatches.insert(.init(source: source, words: words, detail: detail, accepted: accepted), at: 0)
+    @discardableResult
+    private func persist<T: Encodable>(_ event: String, _ data: T) -> Bool {
+        guard !sessionEnded else { return false }
+        do {
+            try journal.append(event, match: matchNumber, battle: battle, data: data)
+            if logError != nil { logError = nil }
+            return true
+        } catch {
+            logError = error.localizedDescription
+            return false
+        }
+    }
+
+    private func logBattle(_ event: String) {
+        persist(event, ["blueAlive": battle.living(.blue).count, "redAlive": battle.living(.red).count])
+    }
+
+    func flag(_ id: UUID, as flag: ReviewFlag?) {
+        guard let index = dispatches.firstIndex(where: { $0.id == id }),
+              persist("review_flag", ["orderID": id.uuidString, "reason": flag?.rawValue ?? "cleared"]) else { return }
+        dispatches[index].flag = flag
+    }
+
+    func revealLog() {
+        if FileManager.default.fileExists(atPath: journal.fileURL.path) {
+            NSWorkspace.shared.activateFileViewerSelecting([journal.fileURL])
+        } else {
+            NSWorkspace.shared.open(journal.fileURL.deletingLastPathComponent())
+        }
+    }
+
+    private func command(_ source: String, _ text: String?, voice: VoiceTrace? = nil) -> LoggedCommand {
+        LoggedCommand(source: source, text: text, voice: voice, selectionBefore: selected.sorted(),
+                      marker: marker, unitsBefore: battle.units.filter(\.alive).map(LoggedCommand.Unit.init))
+    }
+
+    private func finish(_ entry: LoggedCommand) {
+        persist("order", entry)
+        dispatches.insert(.init(id: entry.id, source: entry.source, words: entry.text ?? "Voice input",
+                                detail: entry.detail, accepted: entry.outcome == "accepted"), at: 0)
         if dispatches.count > 20 { dispatches.removeLast() }
         clock.frame &+= 1
     }
-    func submit(_ text: String, source: String) {
+    func submit(_ text: String, source: String, voice: VoiceTrace? = nil) {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !phase.finished else { return }
+        let started = ProcessInfo.processInfo.systemUptime
+        var entry = command(source, text, voice: voice)
         do {
             guard let model else { throw OrderError("The order model is missing from the app bundle.") }
             let parsed = try model.interpret(text, marker: marker)
+            entry.interpretation = parsed
+            entry.stage = "dispatch"
             let living = battle.living(.blue)
             var recipients = selected
             if let kinds = parsed.actors { recipients = Set(living.filter { kinds.contains($0.kind) }.map(\.id)) }
             else if parsed.entireArmy { recipients = Set(living.map(\.id)) }
-            let count = battle.issue(parsed.order, to: recipients)
+            let count = battle.issue(parsed.order, to: recipients) { entry.assignments.append(.init($0)) }
             guard count > 0 else { throw OrderError("Select a surviving unit, or name a unit type.") }
             selected = recipients
             let target = parsed.order.focus.map { "enemy " + $0.rawValue.lowercased() } ?? parsed.place
             let types = Set(living.filter { recipients.contains($0.id) }.map(\.kind))
             let group = types.count == 1 ? types.first!.rawValue.lowercased() : "troops"
             let verb = ["move":"move","attack":"engage","hold":"hold","retreat":"fall back"][parsed.order.action.rawValue]!
-            log(source, text, "\(count) \(group) · \(verb)" + (target.map { " · " + $0 } ?? ""), true)
-        } catch { log(source, text, error.localizedDescription, false) }
+            entry.outcome = "accepted"
+            entry.detail = "\(count) \(group) · \(verb)" + (target.map { " · " + $0 } ?? "")
+        } catch { entry.detail = error.localizedDescription }
+        entry.handlingMS = (ProcessInfo.processInfo.systemUptime - started) * 1000
+        finish(entry)
     }
     func click(world p: Point, secondary: Bool, shift: Bool) {
         guard art.map.contains(p.cell), !phase.finished else { return }
@@ -151,14 +226,22 @@ struct DispatchEntry: Identifiable {
             .min { p.distance(to: $0.p) < p.distance(to: $1.p) }
         if let u = closest, p.distance(to: u.p) <= 0.66 {
             if secondary {
-                let n = battle.issue(Order(.attack, foeID: u.id), to: selected)
-                log("MAP", "Engage enemy \(u.kind.rawValue.lowercased())", "\(n) troops assigned", n > 0)
+                let order = Order(.attack, foeID: u.id)
+                var entry = command("MAP", "Engage enemy \(u.kind.rawValue.lowercased())")
+                entry.stage = "dispatch"; entry.directOrder = order; entry.clickedCell = p.cell
+                let n = battle.issue(order, to: selected) { entry.assignments.append(.init($0)) }
+                entry.outcome = n > 0 ? "accepted" : "rejected"
+                entry.detail = "\(n) troops assigned"; finish(entry)
             } else if shift {
                 if selected.contains(u.id) { selected.remove(u.id) } else { selected.insert(u.id) }
             } else { selected = [u.id] }
             return
         }
-        guard art.map[p.cell].walkable else { log("MAP", "Impassable terrain", "Choose open land or a bridge.", false); return }
+        guard art.map[p.cell].walkable else {
+            var entry = command("MAP", "Impassable terrain")
+            entry.clickedCell = p.cell; entry.stage = "map"; entry.detail = "Choose open land or a bridge."
+            finish(entry); return
+        }
         marker = p.cell
         if secondary { submit("Move to the marker", source: "MAP") }
     }

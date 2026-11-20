@@ -18,7 +18,7 @@ actor LocalSpeech {
         self.commands = commands
     }
 
-    func transcribe(_ url: URL) throws -> String {
+    func transcribe(_ url: URL) throws -> SpeechTranscript {
         guard let context else { throw OrderError("The voice model is still loading.") }
         let file = try AVAudioFile(forReading: url, commonFormat: .pcmFormatFloat32, interleaved: false)
         guard file.processingFormat.sampleRate == 16000, file.processingFormat.channelCount == 1,
@@ -33,21 +33,25 @@ actor LocalSpeech {
         guard usable == 160 else { throw OrderError("No speech heard. Check your microphone and try again.") }
         samples.append(contentsOf: repeatElement(0, count: max(3200, 17600 - samples.count)))
         let original = try decode(samples, context: context, constrained: false)
-        guard let commands, !original.isEmpty else { return original }
+        var transcript = SpeechTranscript(raw: original)
+        guard let commands, !original.isEmpty else { return transcript }
         let words = CommandModel.words(original)
         let wordSet = Set(words)
         // A pin is supplied here only for syntax validation. The live map resolves it on dispatch.
-        if (try? commands.interpret(original, marker: Cell(0,0))) != nil { return original }
+        if (try? commands.interpret(original, marker: Cell(0,0))) != nil { return transcript }
         let veto: Set<String> = ["no","not","dont","never","then","unless","if","except","without","cannot","cant"]
         guard wordSet.isDisjoint(with: veto), words.count >= 2,
-              !wordSet.isDisjoint(with: ["archers","bridge","infantry","cavalry","hold","move","attack","camp","back","retreat","fire","go","march","guard","charge"]) else { return original }
-        if words.contains("and") && commands.actionCount(in: words) > 1 { return original }
-        if words.contains("bridge") && wordSet.isDisjoint(with: ["north","south","northern","southern","upper","lower","top","bottom"]) { return original }
-        if original.hasSuffix("?") || ["who","what","where","why","when","how","should","can"].contains(words[0]) { return original }
-        let candidate = try decode(samples, context: context, constrained: true)
-        guard (try? commands.interpret(candidate, marker: Cell(0,0))) != nil,
-              Self.similarity(original, candidate) >= 0.65 else { return original }
-        return candidate
+              !wordSet.isDisjoint(with: ["archers","bridge","infantry","cavalry","hold","move","attack","camp","back","retreat","fire","go","march","guard","charge"]) else { return transcript }
+        if words.contains("and") && commands.actionCount(in: words) > 1 { return transcript }
+        if words.contains("bridge") && wordSet.isDisjoint(with: ["north","south","northern","southern","upper","lower","top","bottom"]) { return transcript }
+        if original.hasSuffix("?") || ["who","what","where","why","when","how","should","can"].contains(words[0]) { return transcript }
+        do {
+            let candidate = try decode(samples, context: context, constrained: true)
+            transcript.grammarCandidate = candidate
+            transcript.usedGrammar = (try? commands.interpret(candidate, marker: Cell(0,0))) != nil &&
+                Self.similarity(original, candidate) >= 0.65
+        } catch { transcript.grammarError = error.localizedDescription }
+        return transcript
     }
 
     // Compare normalized character sequences so a few misheard syllables can be recovered.

@@ -13,6 +13,7 @@ import SwiftUI
 
 @MainActor private final class GameDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow?
+    private var game: GameStore?
     func applicationDidFinishLaunching(_ notification: Notification) {
         let menu = NSMenu(), application = NSMenuItem()
         menu.addItem(application)
@@ -33,10 +34,13 @@ import SwiftUI
         window.title = "Bannerfall"
         window.minSize = NSSize(width:900,height:650)
         window.isReleasedWhenClosed = false
-        window.contentView = NSHostingView(rootView:GameView(game:GameStore()))
+        let game = GameStore()
+        self.game = game
+        window.contentView = NSHostingView(rootView:GameView(game:game))
         window.center(); window.makeKeyAndOrderFront(nil)
         self.window = window
         NSApp.activate(ignoringOtherApps:true)
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+    func applicationWillTerminate(_ notification: Notification) { game?.endSession() }
 }
