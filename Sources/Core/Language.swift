@@ -19,6 +19,7 @@ struct OrderError: LocalizedError {
 struct CommandModel {
     private let labels = Action.allCases
     private let weights: [String: [Double]]
+    private let actionWords: Set<String>
     private static let stop: Set<String> = ["a","an","the","at","to","for","in","of","on","you","your","their",
         "please","our","my","now","them","this","by","up","out","over","there","here","everyone","some","it"]
     private static let unitWords: [Kind: Set<String>] = [
@@ -44,6 +45,8 @@ struct CommandModel {
 
     init(data: Data) throws {
         let training = try JSONDecoder().decode([String:[String]].self, from: data)
+        let phrases = training.values.flatMap { $0 }.map(Self.words)
+        actionWords = Set(phrases.compactMap(\.first))
         var counts = Array(repeating: [String:Int](), count: labels.count)
         var totals = Array(repeating: 0, count: labels.count), vocabulary: Set<String> = []
         for (i, label) in labels.enumerated() {
@@ -90,6 +93,8 @@ struct CommandModel {
         return (labels[best], confidence)
     }
 
+    func actionCount(in words: [String]) -> Int { Set(words).intersection(actionWords).count }
+
     func interpret(_ text: String, marker: Cell? = nil) throws -> Interpretation {
         let w = Self.words(text)
         guard !w.isEmpty else { throw OrderError("Give one order to your troops.") }
@@ -101,6 +106,7 @@ struct CommandModel {
         if words.contains("then") || words.contains("and") || text.contains(";") {
             throw OrderError("Give one order at a time.")
         }
+        guard !words.isDisjoint(with: actionWords) else { throw OrderError("Name an action: move, attack, hold, or fall back.") }
         let (action, score) = try intent(w)
         if w.joined(separator: " ").contains("hold fire") || w.joined(separator: " ").contains("cease fire") {
             throw OrderError("Hold position lets units defend themselves. Cease-fire is unavailable.")
@@ -116,6 +122,13 @@ struct CommandModel {
             if (markedEnemy || afterVerb) && !followsWith { foes.insert(kind) } else { actors.insert(kind) }
         }
         guard foes.count <= 1 else { throw OrderError("Name one enemy unit type to focus.") }
+        if let comma = text.firstIndex(of: ","), actors.isEmpty {
+            let opening = Set(Self.words(String(text[..<comma])))
+            let context: Set<String> = ["please","okay","all","army","units","everyone","everybody","selected","troops"]
+            if opening.isDisjoint(with: actionWords) && opening.isDisjoint(with: context) {
+                throw OrderError("Which troops? Say archers, infantry, light cavalry, or all units.")
+            }
+        }
         let padded = " " + w.joined(separator: " ") + " "
         var place = Self.aliases.first { _, names in names.contains { padded.contains(" " + $0 + " ") } }?.0
         if words.contains("bridge") || words.contains("crossing") {
