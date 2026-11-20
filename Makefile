@@ -40,6 +40,8 @@ build/core-tests: $(CORE) Tests/CoreTests.swift
 audio-test: build/audio-test
 	./build/audio-test
 
-build/audio-test: $(WHISPER) $(CORE) Sources/Mac/LocalSpeech.swift Tests/AudioTests.swift Makefile
+RADIO := Sources/Mac/LocalSpeech.swift Sources/Mac/VoiceRadio.swift Sources/Mac/GameStore.swift
+AUDIO_TESTS := Tests/AudioTests.swift Tests/PlaytestLogTests.swift
+build/audio-test: $(WHISPER) $(CORE) $(RADIO) $(AUDIO_TESTS) Makefile
 	mkdir -p build/cache
-	$(SWIFTC) -parse-as-library $(SPEECH_FLAGS) $(CORE) Sources/Mac/LocalSpeech.swift Tests/AudioTests.swift $(SPEECH_LIBS) -o $@
+	$(SWIFTC) -parse-as-library $(SPEECH_FLAGS) $(CORE) $(RADIO) $(AUDIO_TESTS) $(SPEECH_LIBS) -o $@

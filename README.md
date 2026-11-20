@@ -37,6 +37,14 @@ Give one order at a time. Name a troop type, say “all units,” or leave the s
 | Right-click an enemy | Focus that individual opponent |
 | P / V | Begin, pause, or resume / show terrain and routes |
 
+### Playtest logs
+
+Bannerfall saves one JSON Lines file per launch in `~/Library/Logs/Bannerfall/`. Click **Show logs** in the order log to reveal the current file in Finder. You can read it during play or after quitting. Restarting the battle starts a new match number in the same file.
+
+Each order records its source, text, selection, map pin, positions of living units, parsed order, and the orders assigned to individual units. Voice entries include Whisper’s first transcript, any grammar retry, which wording reached the interpreter, and recording and decoding times. Failed and cancelled attempts include a reason. A classifier confidence score applies only to the action it chose. Use the flag beside an order to mark a transcription error, a misunderstood order, or unexpected unit behavior. The flag links to that order in the file.
+
+Logs stay on your Mac. Microphone audio is temporary and is deleted after processing or cancellation.
+
 ## Build from source
 
 Install Apple’s Command Line Tools (`xcode-select --install`) on macOS 14 or later. From a checkout run:
