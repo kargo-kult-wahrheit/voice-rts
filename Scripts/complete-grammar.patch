@@ -1,0 +1,38 @@
+--- a/src/whisper.cpp
++++ b/src/whisper.cpp
+@@ -4702,13 +4702,13 @@
+         return;
+     }
+ 
+-    //bool allow_eot = false;
+-    //for (const auto & stack : grammar.stacks) {
+-    //    if (stack.empty()) {
+-    //        allow_eot = true;
+-    //        break;
+-    //    }
+-    //}
++    bool allow_eot = false;
++    for (const auto & stack : grammar.stacks) {
++        if (stack.empty()) {
++            allow_eot = true;
++            break;
++        }
++    }
+ 
+     const whisper_token eot = whisper_token_eot(&ctx);
+ 
+@@ -4729,10 +4729,10 @@
+         logits[reject.id] -= params.grammar_penalty;
+     }
+ 
+-    // when the grammar allows a continuation, we penalize the end-of-text token
+-    //if (!allow_eot) {
+-    //    logits[eot] -= params.grammar_penalty;
+-    //}
++    // A field order must reach an accepting state before the decoder ends it.
++    if (!allow_eot) {
++        logits[eot] -= params.grammar_penalty;
++    }
+     //fprintf(stderr, "Allowed: (%zu tokens)\n", size - rejects.size());
+ }
+ 

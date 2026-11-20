@@ -21,4 +21,5 @@ fetch "$archive" a8e38fdbe85fae2c968914f4bd2671467671ca07aa003a5daea379891f064dc
     'https://github.com/ggml-org/whisper.cpp/archive/refs/tags/v1.7.5.zip'
 fetch "$vendor/ggml-base.en-q5_1.bin" 4baf70dd0d7c4247ba2b81fafd9c01005ac77c2f9ef064e00dcf195d0e2fdd2f \
     'https://huggingface.co/ggerganov/whisper.cpp/resolve/c521a4b02f422512d734391fdf08bb08c0862f68/ggml-base.en-q5_1.bin?download=true'
-unzip -oq "$archive" 'whisper.cpp-1.7.5/ggml/*' 'whisper.cpp-1.7.5/src/*' 'whisper.cpp-1.7.5/include/*' -d "$vendor"
+unzip -oq "$archive" 'whisper.cpp-1.7.5/ggml/*' 'whisper.cpp-1.7.5/src/*' 'whisper.cpp-1.7.5/include/*' 'whisper.cpp-1.7.5/examples/grammar-parser.*' -d "$vendor"
+patch -s -d "$vendor/whisper.cpp-1.7.5" -p1 < Scripts/complete-grammar.patch
